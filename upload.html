@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Files</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; }
+        .input-group { margin: 10px 0; }
+        label { display: block; margin-bottom: 5px; }
+        input { width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { padding: 10px 20px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #45a049; }
+    </style>
+</head>
+<body>
+    <h2>Upload Monthly Data</h2>
+
+    <div class="input-group">
+        <label for="trailIncomeFile">Trail Income Excel File:</label>
+        <input type="file" id="trailIncomeFile" accept=".xlsx, .xls">
+    </div>
+
+    <div class="input-group">
+        <label for="newBusinessFile">New Business Excel File:</label>
+        <input type="file" id="newBusinessFile" accept=".xlsx, .xls">
+    </div>
+
+    <button onclick="uploadFiles()">Upload and Generate Report</button>
+    <p id="error" style="color: red;"></p>
+
+    <script>
+        async function uploadFiles() {
+            const trailFile = document.getElementById('trailIncomeFile').files[0];
+            const newBusinessFile = document.getElementById('newBusinessFile').files[0];
+            const error = document.getElementById('error');
+
+            if (!trailFile || !newBusinessFile) {
+                error.textContent = 'Please select both files';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('trailIncomeFile', trailFile);
+            formData.append('newBusinessFile', newBusinessFile);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.error || 'Upload failed');
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'incentive_output.xlsx';
+                a.click();
+                window.URL.revokeObjectURL(url);
+            } catch (err) {
+                error.textContent = err.message;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RM Incentive Calculator</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; }
+        .input-group { margin: 10px 0; }
+        label { display: block; margin-bottom: 5px; }
+        input, select { width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { padding: 10px 20px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #45a049; }
+        #result { margin-top: 20px; padding: 10px; border: 1px solid #ddd; display: none; }
+    </style>
+</head>
+<body>
+    <h2>RM Incentive Calculator</h2>
+
+    <div class="input-group">
+        <label for="name">Name:</label>
+        <input type="text" id="name" placeholder="Enter your name">
+    </div>
+
+    <div class="input-group">
+        <label for="previousIncome">Previous Income:</label>
+        <input type="number" id="previousIncome" placeholder="Enter previous income">
+    </div>
+
+    <div class="input-group">
+        <label for="newIncome">New Income:</label>
+        <input type="number" id="newIncome" placeholder="Enter new income">
+    </div>
+
+    <div class="input-group">
+        <label for="crossedSlab">Have you crossed your slab?</label>
+        <select id="crossedSlab">
+            <option value="">Select</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+        </select>
+    </div>
+
+    <button onclick="calculateIncentive()">Calculate Incentive</button>
+
+    <div id="result">
+        <h3>Calculation Results</h3>
+        <p>Name: <span id="resultName"></span></p>
+        <p>Incentive Amount: <span id="incentiveAmount"></span></p>
+        <p>Part 1 (70% - Next Month): <span id="part1"></span></p>
+        <p>Part 2 (30% - Year End): <span id="part2"></span></p>
+        <p>Remarks: <span id="remarks"></span></p>
+    </div>
+
+    <script>
+        async function calculateIncentive() {
+            const name = document.getElementById('name').value.trim();
+            const previousIncome = parseFloat(document.getElementById('previousIncome').value) || 0;
+            const newIncome = parseFloat(document.getElementById('newIncome').value) || 0;
+            const crossedSlab = document.getElementById('crossedSlab').value;
+
+            if (!name || !crossedSlab) {
+                alert('Please fill all fields');
+                return;
+            }
+
+            try {
+                const response = await fetch('/calculate-incentive', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, previousIncome, newIncome, crossedSlab })
+                });
+                const data = await response.json();
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                document.getElementById('resultName').textContent = data.name;
+                document.getElementById('incentiveAmount').textContent = data.incentiveAmount.toFixed(2);
+                document.getElementById('part1').textContent = data.part1.toFixed(2);
+                document.getElementById('part2').textContent = data.part2.toFixed(2);
+                document.getElementById('remarks').textContent = data.remarks;
+                document.getElementById('result').style.display = 'block';
+            } catch (error) {
+                alert('Error calculating incentive');
+            }
+        }
+    </script>
+</body>
+</html>
