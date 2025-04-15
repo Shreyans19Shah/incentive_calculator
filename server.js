@@ -1,29 +1,35 @@
 const express = require('express');
 const multer = require('multer');
 const XLSX = require('xlsx');
-const path = require('path');
-const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const path = require('path');
+const fs = require('fs');
 const { Octokit } = require('@octokit/rest');
 
 const app = express();
 const port = process.env.PORT || 3000;
-const upload = multer({ dest: 'uploads/' });
-const JWT_SECRET = process.env.JWT_SECRET || 'PESB@14';
-const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
-app.use(express.static(__dirname));
 app.use(express.json());
+app.use(express.static(path.join(__dirname)));
+
+// JWT Secret
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
+// Initialize Octokit for GitHub API
+const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
 // Admin credentials
 const ADMIN_CREDENTIALS = {
     username: 'Admin',
-    password: '$2b$10$YDun1n93NNqBf1lf5AeoG.vWX.fp3KppLKXx5zqQX6AaRBRXWksJG' // Replace with your bcrypt hash
+    password: '$2b$10$YDun1n93NNqBf1lf5AeoG.vWX.fp3KppLKXx5zqQX6AaRBRXWksJG' // Hashed 'PESB@14'
 };
 
+// Multer setup for file uploads
+const upload = multer({ dest: 'Uploads/' });
+
 // Middleware to verify JWT
-const verifyToken = (req, res, next) => {
+function verifyToken(req, res, next) {
     const token = req.headers['authorization']?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'No token provided' });
 
@@ -32,62 +38,34 @@ const verifyToken = (req, res, next) => {
         req.user = decoded;
         next();
     });
-};
+}
 
 // Login endpoint
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Username and password are required' });
+    }
+
     if (username !== ADMIN_CREDENTIALS.username) {
-        return res.status(401).json({ error: 'Invalid username' });
+        return res.status(401).json({ error: 'Invalid username or password' });
     }
 
-    const passwordMatch = await bcrypt.compare(password, ADMIN_CREDENTIALS.password);
-    if (!passwordMatch) {
-        return res.status(401).json({ error: 'Invalid password' });
-    }
-
-    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '1h' });
-    res.json({ token });
-});
-
-// RM calculator endpoint
-app.post('/calculate-incentive', (req, res) => {
     try {
-        const { name, previousIncome, newIncome, crossedSlab } = req.body;
-        if (!name || previousIncome == null || newIncome == null || crossedSlab == null) {
-            throw new Error('All fields are required');
+        const match = await bcrypt.compare(password, ADMIN_CREDENTIALS.password);
+        if (!match) {
+            return res.status(401).json({ error: 'Invalid username or password' });
         }
 
-        const newBusinessValue = newIncome > previousIncome ? newIncome - previousIncome : 0;
-        let incentive = 0;
-        let remarks = '';
-
-        if (newIncome > previousIncome && crossedSlab === 'Yes') {
-            incentive = newBusinessValue * 0.20;
-            remarks = 'You will receive an incentive';
-        } else if (newIncome <= previousIncome) {
-            remarks = 'New Income does not exceed Previous Income';
-        } else {
-            remarks = 'You have not crossed your slab';
-        }
-
-        const part1 = incentive * 0.70;
-        const part2 = incentive * 0.30;
-
-        res.json({
-            name,
-            incentiveAmount: incentive,
-            part1,
-            part2,
-            remarks
-        });
+        const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '1h' });
+        res.json({ token });
     } catch (error) {
-        console.error('Error calculating incentive:', error);
-        res.status(400).json({ error: error.message });
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Server error' });
     }
 });
 
-// Protected upload endpoint
+// Upload endpoint
 app.post('/upload', verifyToken, upload.fields([
     { name: 'trailIncomeFile', maxCount: 1 },
     { name: 'newBusinessFile', maxCount: 1 }
@@ -118,14 +96,29 @@ app.post('/upload', verifyToken, upload.fields([
 
         // Read slabs.xlsx
         const slabFilePath = path.join(__dirname, 'slabs.xlsx');
+        console.log('Checking for slabs.xlsx at:', slabFilePath);
         if (!fs.existsSync(slabFilePath)) {
-            throw new Error('slabs.xlsx not found');
+            console.error('slabs.xlsx not found at:', slabFilePath);
+            throw new Error('slabs.xlsx not found in project root');
         }
-        const slabWorkbook = XLSX.readFile(slabFilePath);
-        const slabSheetName = slabWorkbook.SheetNames[0];
-        const slabWorksheet = slabWorkbook.Sheets[slabSheetName];
-        const slabData = XLSX.utils.sheet_to_json(slabWorkbook);
-        console.log('Slab Data:', slabData);
+        try {
+            const slabWorkbook = XLSX.readFile(slabFilePath);
+            const slabSheetName = slabWorkbook.SheetNames[0];
+            if (!slabSheetName) {
+                console.error('No sheets found in slabs.xlsx');
+                throw new Error('slabs.xlsx is empty or invalid');
+            }
+            const slabWorksheet = slabWorkbook.Sheets[slabSheetName];
+            const slabData = XLSX.utils.sheet_to_json(slabWorksheet);
+            if (!slabData.length) {
+                console.error('slabs.xlsx contains no data');
+                throw new Error('slabs.xlsx is empty');
+            }
+            console.log('Slab Data:', slabData);
+        } catch (error) {
+            console.error('Error reading slabs.xlsx:', error.message);
+            throw new Error('Failed to read slabs.xlsx: ' + error.message);
+        }
 
         // Read master_trail_income.xlsx from GitHub
         let masterData = [];
@@ -144,7 +137,7 @@ app.post('/upload', verifyToken, upload.fields([
             if (error.status === 404) {
                 console.log('master_trail_income.xlsx not found in repo at app/trail-data. Will create on write.');
             } else {
-                console.error('Error reading from GitHub:', error.message);
+                console.error('Error reading from GitHub:', error.message, error.status, error.response?.data);
                 throw new Error('Failed to read master trail income data');
             }
         }
@@ -207,34 +200,38 @@ app.post('/upload', verifyToken, upload.fields([
 
             // Update or create file in GitHub
             const commitMessage = `Update master_trail_income.xlsx for ${currentMonth}`;
+            console.log('Attempting GitHub write:', {
+                owner: process.env.GITHUB_OWNER,
+                repo: process.env.GITHUB_REPO,
+                path: 'app/trail-data/master_trail_income.xlsx',
+                tokenSet: !!process.env.GITHUB_TOKEN
+            });
             try {
                 const { data: { sha } } = await octokit.repos.getContent({
                     owner: process.env.GITHUB_OWNER,
                     repo: process.env.GITHUB_REPO,
-                    path: 'app/trail-data/master_trail_income.xlsx'
+                    path: 'app/trail-data/master_trail-income.xlsx'
+                }).catch(err => {
+                    if (err.status === 404) return { data: { sha: null } };
+                    throw err;
                 });
+                console.log('Existing file SHA:', sha || 'none (will create)');
                 await octokit.repos.createOrUpdateFileContents({
                     owner: process.env.GITHUB_OWNER,
                     repo: process.env.GITHUB_REPO,
                     path: 'app/trail-data/master_trail_income.xlsx',
                     message: commitMessage,
                     content,
-                    sha
+                    sha: sha || undefined
                 });
-                console.log('Updated master_trail_income.xlsx in GitHub at app/trail-data');
+                console.log('Successfully wrote master_trail_income.xlsx to GitHub at app/trail-data');
             } catch (error) {
-                if (error.status === 404) {
-                    await octokit.repos.createOrUpdateFileContents({
-                        owner: process.env.GITHUB_OWNER,
-                        repo: process.env.GITHUB_REPO,
-                        path: 'app/trail-data/master_trail_income.xlsx',
-                        message: commitMessage,
-                        content
-                    });
-                    console.log('Created master_trail_income.xlsx in GitHub at app/trail-data');
-                } else {
-                    throw error;
-                }
+                console.error('GitHub API error:', {
+                    message: error.message,
+                    status: error.status,
+                    details: error.response?.data || 'No additional details'
+                });
+                throw error;
             }
         } catch (error) {
             console.error('Error writing to GitHub:', error.message);
@@ -242,16 +239,36 @@ app.post('/upload', verifyToken, upload.fields([
         }
 
         // Generate output Excel
+        const uploadsDir = path.join(__dirname, 'Uploads');
+        console.log('Ensuring Uploads directory at:', uploadsDir);
+        if (!fs.existsSync(uploadsDir)) {
+            console.log('Creating Uploads directory');
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
         const outputWorkbook = XLSX.utils.book_new();
         const outputWorksheet = XLSX.utils.json_to_sheet(outputData);
         XLSX.utils.book_append_sheet(outputWorkbook, outputWorksheet, 'Incentives');
-        const outputPath = path.join(__dirname, 'Uploads', 'incentive_output.xlsx');
+        const outputPath = path.join(uploadsDir, 'incentive_output.xlsx');
+        console.log('Writing output to:', outputPath);
         XLSX.writeFile(outputWorkbook, outputPath);
 
         // Send file
+        console.log('Attempting to send file:', outputPath);
+        if (!fs.existsSync(outputPath)) {
+            console.error('Output file not found:', outputPath);
+            throw new Error('Failed to generate incentive_output.xlsx');
+        }
         res.download(outputPath, 'incentive_output.xlsx', (err) => {
-            if (err) console.error('Error sending file:', err);
-            fs.unlinkSync(outputPath);
+            if (err) {
+                console.error('Error sending file:', err.message);
+                res.status(500).json({ error: 'Failed to send output file' });
+            }
+            try {
+                fs.unlinkSync(outputPath);
+                console.log('Cleaned up output file:', outputPath);
+            } catch (cleanupErr) {
+                console.error('Error cleaning up output file:', cleanupErr.message);
+            }
         });
     } catch (error) {
         console.error('Error processing request:', error);
@@ -262,6 +279,41 @@ app.post('/upload', verifyToken, upload.fields([
     }
 });
 
-app.listen(port, '0.0.0.0', () => {
-    console.log(`Server running at http://${process.env.NODE_ENV === 'production' ? 'Render URL' : 'localhost'}:${port}`);
+// Incentive calculation endpoint
+app.post('/calculate-incentive', (req, res) => {
+    try {
+        const { name, previousIncome, newIncome, crossedSlab } = req.body;
+        if (!name || previousIncome === undefined || newIncome === undefined || crossedSlab === undefined) {
+            throw new Error('All fields are required');
+        }
+
+        let incentive = 0;
+        let remarks = '';
+        let part1 = 0;
+        let part2 = 0;
+
+        if (newIncome > previousIncome && crossedSlab) {
+            incentive = (newIncome - previousIncome) * 0.20;
+            part1 = incentive * 0.70;
+            part2 = incentive * 0.30;
+            remarks = 'You will receive an incentive';
+        } else if (newIncome <= previousIncome) {
+            remarks = 'New Income does not exceed Previous Income';
+        } else {
+            remarks = 'Slab not crossed';
+        }
+
+        res.json({
+            incentiveAmount: incentive,
+            part1,
+            part2,
+            remarks
+        });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
 });
