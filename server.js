@@ -133,7 +133,7 @@ app.post('/upload', verifyToken, upload.fields([
             const response = await octokit.repos.getContent({
                 owner: process.env.GITHUB_OWNER,
                 repo: process.env.GITHUB_REPO,
-                path: 'master_trail_income.xlsx'
+                path: 'app/trail-data/master_trail_income.xlsx'
             });
             const content = Buffer.from(response.data.content, 'base64');
             const masterWorkbook = XLSX.read(content, { type: 'buffer' });
@@ -142,7 +142,7 @@ app.post('/upload', verifyToken, upload.fields([
             console.log('Read master_trail_income.xlsx from GitHub');
         } catch (error) {
             if (error.status === 404) {
-                console.log('master_trail_income.xlsx not found in repo. Will create on write.');
+                console.log('master_trail_income.xlsx not found in repo at app/trail-data. Will create on write.');
             } else {
                 console.error('Error reading from GitHub:', error.message);
                 throw new Error('Failed to read master trail income data');
@@ -211,27 +211,27 @@ app.post('/upload', verifyToken, upload.fields([
                 const { data: { sha } } = await octokit.repos.getContent({
                     owner: process.env.GITHUB_OWNER,
                     repo: process.env.GITHUB_REPO,
-                    path: 'master_trail_income.xlsx'
+                    path: 'app/trail-data/master_trail_income.xlsx'
                 });
                 await octokit.repos.createOrUpdateFileContents({
                     owner: process.env.GITHUB_OWNER,
                     repo: process.env.GITHUB_REPO,
-                    path: 'master_trail_income.xlsx',
+                    path: 'app/trail-data/master_trail_income.xlsx',
                     message: commitMessage,
                     content,
                     sha
                 });
-                console.log('Updated master_trail_income.xlsx in GitHub');
+                console.log('Updated master_trail_income.xlsx in GitHub at app/trail-data');
             } catch (error) {
                 if (error.status === 404) {
                     await octokit.repos.createOrUpdateFileContents({
                         owner: process.env.GITHUB_OWNER,
                         repo: process.env.GITHUB_REPO,
-                        path: 'master_trail_income.xlsx',
+                        path: 'app/trail-data/master_trail_income.xlsx',
                         message: commitMessage,
                         content
                     });
-                    console.log('Created master_trail_income.xlsx in GitHub');
+                    console.log('Created master_trail_income.xlsx in GitHub at app/trail-data');
                 } else {
                     throw error;
                 }
@@ -243,7 +243,7 @@ app.post('/upload', verifyToken, upload.fields([
 
         // Generate output Excel
         const outputWorkbook = XLSX.utils.book_new();
-        const outputWorksheet = XLSX.utils.sheet_to_json(outputData);
+        const outputWorksheet = XLSX.utils.json_to_sheet(outputData);
         XLSX.utils.book_append_sheet(outputWorkbook, outputWorksheet, 'Incentives');
         const outputPath = path.join(__dirname, 'Uploads', 'incentive_output.xlsx');
         XLSX.writeFile(outputWorkbook, outputPath);
