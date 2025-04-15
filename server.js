@@ -17,7 +17,7 @@ const express = require('express');
   // Admin credentials
   const ADMIN_CREDENTIALS = {
       username: 'Admin',
-      password: '$2b$10$YOUR_HASHED_PASSWORD' // Replace with your bcrypt hash
+      password: '$2b$10$YDun1n93NNqBf1lf5AeoG.vWX.fp3KppLKXx5zqQX6AaRBRXWksJG' // Replace with your bcrypt hash
   };
 
   // Middleware to verify JWT
