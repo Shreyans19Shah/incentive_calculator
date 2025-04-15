@@ -10,7 +10,7 @@ const { Octokit } = require('@octokit/rest');
 const app = express();
 const port = process.env.PORT || 3000;
 const upload = multer({ dest: 'uploads/' });
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || 'PESB@14';
 const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
 app.use(express.static(__dirname));
